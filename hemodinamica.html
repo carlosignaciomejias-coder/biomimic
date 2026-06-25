@@ -1,0 +1,883 @@
+<!DOCTYPE html>
+<html lang="es" class="transition-colors duration-300">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Simulador Hemodinámico Veterinario</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        rose: {
+                            50: '#fff1f2',
+                            100: '#ffe4e6',
+                            200: '#fecdd3',
+                            800: '#9f1239',
+                            900: '#881337',
+                            950: '#4c0519',
+                        },
+                        stone: {
+                            850: '#1c1917',
+                            950: '#0c0a09',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+        
+        body { font-family: 'Inter', sans-serif; }
+
+        @keyframes heartbeat {
+            0% { transform: scale(1); }
+            15% { transform: scale(1.15); }
+            30% { transform: scale(1); }
+            45% { transform: scale(1.15); }
+            60% { transform: scale(1); }
+            100% { transform: scale(1); }
+        }
+
+        .heart-icon {
+            color: #dc2626;
+            filter: drop-shadow(0 4px 6px rgba(220, 38, 38, 0.4));
+            animation-name: heartbeat;
+            animation-timing-function: ease-in-out;
+            animation-iteration-count: infinite;
+        }
+
+        .vessel-container {
+            background: linear-gradient(90deg, #7f1d1d 0%, #b91c1c 50%, #7f1d1d 100%);
+            border: 1px solid #991b1b;
+            box-shadow: inset 0 2px 8px rgba(0,0,0,0.3);
+            overflow: hidden;
+            position: relative;
+            transition: height 0.3s ease;
+        }
+        
+        .dark .vessel-container {
+            background: linear-gradient(90deg, #450a0a 0%, #7f1d1d 100%);
+            border-color: #7f1d1d;
+        }
+
+        .blood-particle {
+            position: absolute;
+            border-radius: 50%;
+            pointer-events: none;
+            background-color: rgba(254, 202, 202, 0.8); 
+            box-shadow: 0 0 4px rgba(255, 255, 255, 0.3);
+        }
+
+        /* Sliders Compactos */
+        input[type=range] { -webkit-appearance: none; background: transparent; }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none; 
+            height: 14px;
+            width: 14px; 
+            border-radius: 50%; 
+            background: #e11d48; cursor: pointer; margin-top: -5px; 
+            box-shadow: 0 1px 3px rgba(0,0,0,0.3); border: 2px solid white; transition: transform 0.1s;
+        }
+        input[type=range]::-webkit-slider-thumb:hover { transform: scale(1.1); }
+        input[type=range]::-webkit-slider-runnable-track {
+            width: 100%; height: 4px; cursor: pointer; background: #fecdd3; border-radius: 2px;
+        }
+        .dark input[type=range]::-webkit-slider-runnable-track { background: #4c0519; }
+        
+        #hrSlider::-webkit-slider-thumb { background: #dc2626; border-color: #fee2e2; }
+        #preloadSlider::-webkit-slider-thumb { background: #2563eb; border-color: #dbeafe; } 
+        #contractilitySlider::-webkit-slider-thumb { background: #059669; border-color: #d1fae5; }
+        #radiusSlider::-webkit-slider-thumb { background: #d97706; border-color: #ffedd5; } 
+        #viscSlider::-webkit-slider-thumb { background: #9333ea; border-color: #f3e8ff; }
+
+        .toggle-checkbox:checked { right: 0; border-color: #be123c; }
+        .toggle-checkbox:checked + .toggle-label { background-color: #be123c; }
+        
+        /* Ajustes scrollbar */
+        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 2px; }
+        .dark ::-webkit-scrollbar-thumb { background: #475569; }
+    </style>
+</head>
+<body class="p-0 md:p-2 flex flex-col items-center min-h-screen justify-start md:justify-center bg-rose-50 dark:bg-stone-950 text-stone-800 dark:text-stone-200 transition-colors duration-300">
+
+    <div class="w-full max-w-7xl bg-white dark:bg-stone-900 md:rounded-2xl shadow-xl overflow-hidden border-0 md:border border-rose-200 dark:border-stone-800 transition-colors duration-300 flex flex-col h-auto lg:h-[95vh]">
+        
+        <div class="bg-gradient-to-r from-red-900 to-rose-900 dark:from-stone-950 dark:to-stone-900 text-white p-3 flex-shrink-0 border-b border-rose-800 dark:border-stone-800 sticky top-0 z-50 shadow-md md:static md:shadow-none">
+            <div class="flex flex-col lg:flex-row justify-between items-center gap-3">
+                
+                <div class="text-center lg:text-left w-full lg:w-auto flex justify-between items-center gap-4">
+                    <div>
+                        <h1 class="text-lg md:text-xl font-bold tracking-tight text-white flex items-center">
+                            <i class="fas fa-heartbeat mr-2 text-rose-400"></i>
+                            Simulador <span class="hidden sm:inline ml-1">Hemodinámico</span>
+                        </h1>
+                        <p class="text-rose-300/60 text-[10px] font-medium hidden sm:block">Autor: Carlos Mejías Molina <span class="mx-1 opacity-50">|</span> Gemini Dev</p>
+                    </div>
+                    
+                    <div class="flex gap-2">
+                        <button onclick="toggleDarkMode()" class="px-2 py-1 bg-rose-950/50 hover:bg-rose-950 text-rose-200 text-xs rounded transition-colors flex items-center border border-rose-800/50 h-7 w-8 justify-center">
+                            <i id="themeIcon" class="fas fa-moon"></i>
+                        </button>
+                        <button onclick="resetValues()" class="px-3 py-1 bg-white text-rose-900 hover:bg-rose-100 text-xs font-bold rounded transition-colors flex items-center shadow group h-7">
+                            <i class="fas fa-undo mr-1 group-hover:-rotate-180 transition-transform duration-500 text-rose-600"></i> <span class="hidden sm:inline">Reset</span>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="flex flex-wrap justify-center gap-3 bg-black/20 p-1.5 rounded-lg border border-white/10 backdrop-blur-md w-full lg:w-auto">
+                    <div class="text-center flex-1 min-w-[80px]">
+                        <span class="text-[8px] text-rose-200 uppercase tracking-widest font-bold block">GASTO (CO)</span>
+                        <div class="flex items-center justify-center gap-1">
+                            <div id="headerCoValue" class="text-lg font-bold text-white leading-none">
+                                <span id="headerCo">5.2</span>
+                            </div>
+                            <span id="coStatusIcon" class="text-[10px]"></span>
+                        </div>
+                        <div id="coAlertBox" class="h-3 flex items-center justify-center mt-0.5">
+                            <span id="coStatusText" class="text-[8px] font-medium text-rose-200/70 block">L/min</span>
+                        </div>
+                    </div>
+                    
+                    <div class="w-px bg-white/10 h-6 self-center"></div>
+                    
+                    <div class="text-center flex-1 min-w-[100px]">
+                        <span class="text-[8px] text-rose-200 uppercase tracking-widest font-bold block">PRESIÓN (PAM)</span>
+                        <div class="flex flex-col items-center">
+                            <div class="flex items-baseline justify-center gap-1">
+                                <span id="headerBP" class="text-lg font-bold text-white leading-none">120/80</span>
+                                <span id="bpStatusIcon" class="text-[10px]"></span>
+                            </div>
+                            <div class="text-[8px] font-normal mt-0.5 flex items-center gap-1" id="mapStatusContainer">
+                                <span class="text-emerald-300">(<span id="headerMap">93</span>)</span> <span id="mapStatusText"></span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="flex flex-col lg:flex-row flex-1 lg:overflow-hidden overflow-visible">
+            
+            <div class="w-full lg:w-1/3 bg-rose-50/50 dark:bg-stone-900 border-r border-rose-100 dark:border-stone-800 flex flex-col order-2 lg:order-1">
+                
+                <div class="p-3 space-y-2 overflow-visible lg:overflow-y-auto flex-1">
+                    
+                    <div class="bg-white dark:bg-stone-800 p-2 rounded-lg border border-rose-200 dark:border-stone-700 shadow-sm flex items-center justify-between">
+                        <label class="text-rose-900 dark:text-rose-200 text-[10px] font-bold uppercase tracking-wider mr-2">Especie:</label>
+                        <select id="speciesSelect" onchange="changeSpecies()" class="py-1 px-2 text-[10px] border-rose-200 dark:border-stone-600 rounded shadow-sm bg-rose-50 dark:bg-stone-900 text-stone-800 dark:text-stone-200 focus:ring-0 focus:border-rose-400 cursor-pointer font-medium flex-1 h-6">
+                            <option value="human">👤 Humano (70kg)</option>
+                            <option value="dog">🐕 Perro (20kg)</option>
+                            <option value="cat">🐈 Gato (4kg)</option>
+                            <option value="horse">🐎 Equino (500kg)</option>
+                            <option value="elephant">🐘 Elefante (4000kg)</option>
+                            <option value="cattle">🐄 Bovino (600kg)</option>
+                            <option value="rat">🐀 Roedor (300g)</option>
+                        </select>
+                    </div>
+
+                    <div class="bg-emerald-50 dark:bg-emerald-950/30 p-2 rounded-lg border border-emerald-100 dark:border-emerald-900/30 flex items-center justify-between shadow-sm">
+                        <div class="flex flex-col">
+                            <span class="font-bold text-emerald-800 dark:text-emerald-400 text-[10px]"><i class="fas fa-brain mr-1"></i>Reflejos Fisiológicos</span>
+                        </div>
+                        <div class="relative inline-block w-8 mr-1 align-middle select-none">
+                            <input type="checkbox" id="autoRegToggle" class="toggle-checkbox absolute block w-3.5 h-3.5 rounded-full bg-white border-2 appearance-none cursor-pointer border-rose-200 dark:border-stone-600 transition-all duration-300"/>
+                            <label for="autoRegToggle" class="toggle-label block overflow-hidden h-3.5 rounded-full bg-stone-300 dark:bg-stone-600 cursor-pointer transition-colors duration-300"></label>
+                        </div>
+                    </div>
+
+                    <div class="space-y-2.5 pt-1">
+                        <div id="hrContainer" class="transition-opacity duration-300">
+                            <div class="flex justify-between items-end mb-0.5">
+                                <label class="font-bold text-rose-900 dark:text-rose-100 text-[10px] flex items-center">
+                                    <i class="fas fa-heartbeat text-red-500 mr-1.5 w-3"></i>Frec. Cardíaca
+                                    <span id="autoBadge" class="hidden ml-2 bg-emerald-100 text-emerald-700 text-[8px] px-1 rounded border border-emerald-200">AUTO</span>
+                                </label>
+                                <span class="font-bold text-[10px] transition-colors duration-200" id="hrDisplay">75 lpm</span>
+                            </div>
+                            <input type="range" id="hrSlider" class="w-full h-1">
+                            <p id="reflexMsg" class="text-[9px] text-emerald-600 dark:text-emerald-400 font-medium h-3 text-right italic leading-none mt-0.5"></p>
+                        </div>
+
+                        <div class="bg-orange-50/50 dark:bg-orange-900/10 p-1.5 rounded border border-orange-100 dark:border-orange-800/30">
+                            <div class="flex justify-between items-end mb-0.5">
+                                <label class="font-bold text-stone-700 dark:text-stone-300 text-[10px]"><i class="fas fa-compress-arrows-alt text-orange-500 mr-1.5 w-3"></i>Calibre de Vasos</label>
+                                <span class="font-bold text-orange-600 text-[10px]" id="radiusDisplay">1.0x</span>
+                            </div>
+                            <input type="range" id="radiusSlider" min="0.5" max="1.5" step="0.05" value="1.0" class="w-full accent-orange-500 h-1">
+                            <div class="flex justify-between text-[8px] text-stone-400 dark:text-stone-500 mt-0.5 px-1">
+                                <span>Constricción</span>
+                                <span>Dilatación</span>
+                            </div>
+                        </div>
+
+                        <div>
+                            <div class="flex justify-between items-end mb-0.5">
+                                <label class="font-bold text-rose-900 dark:text-rose-100 text-[10px]"><i class="fas fa-tint text-blue-500 mr-1.5 w-3"></i>Precarga</label>
+                                <span class="font-bold text-[10px] transition-colors duration-200" id="preloadDisplay">70 ml</span>
+                            </div>
+                            <input type="range" id="preloadSlider" class="w-full h-1">
+                             <p id="preloadMsg" class="text-[8px] h-2.5 text-right italic leading-none mt-0.5"></p>
+                        </div>
+
+                        <div>
+                            <div class="flex justify-between items-end mb-0.5">
+                                <label class="font-bold text-rose-900 dark:text-rose-100 text-[10px]"><i class="fas fa-bolt text-emerald-500 mr-1.5 w-3"></i>Contractilidad</label>
+                                <span class="font-bold text-emerald-600 text-[10px]" id="contractilityDisplay">100%</span>
+                            </div>
+                            <input type="range" id="contractilitySlider" min="0.5" max="2.0" step="0.1" value="1.0" class="w-full h-1 accent-emerald-500">
+                        </div>
+
+                        <div class="bg-white dark:bg-stone-800 p-1.5 rounded border border-purple-100 dark:border-purple-900/30">
+                            <div class="flex justify-between items-end mb-0.5">
+                                <label class="font-bold text-stone-700 dark:text-stone-300 text-[10px]"><i class="fas fa-vial text-purple-500 mr-1.5 w-3"></i>Viscosidad</label>
+                                <span class="font-bold text-[10px] transition-colors duration-200" id="viscDisplay">1.0x</span>
+                            </div>
+                            <input type="range" id="viscSlider" min="0.5" max="2.0" step="0.1" value="1.0" class="w-full accent-purple-500 h-1">
+                        </div>
+                        
+                        <div class="bg-orange-50 dark:bg-orange-950/20 p-1.5 rounded border border-orange-200 dark:border-orange-800 flex justify-between items-center">
+                            <span class="text-[9px] uppercase tracking-wider text-orange-800 dark:text-orange-400 font-bold">Postcarga</span>
+                            <span class="text-sm font-mono font-bold text-orange-700 dark:text-orange-300" id="calculatedSvrDisplay">18 U</span>
+                        </div>
+
+                    </div>
+                </div>
+
+            </div>
+            
+            <div class="w-full lg:w-2/3 bg-white dark:bg-stone-900 transition-colors duration-300 lg:overflow-y-auto order-1 lg:order-2 border-b lg:border-b-0 border-stone-200 dark:border-stone-800">
+                
+                <div class="p-3 md:p-4 space-y-3 h-full flex flex-col">
+                    
+                    <div class="grid grid-cols-3 gap-2">
+                        <div class="bg-rose-50/50 dark:bg-stone-800/50 p-1.5 rounded-lg border border-rose-100 dark:border-stone-700 text-center flex flex-col justify-center">
+                            <span class="text-[8px] text-rose-400 dark:text-stone-500 font-bold uppercase tracking-wider mb-0.5">Gasto</span>
+                            <div class="flex items-center justify-center gap-0.5 font-mono text-xs font-bold text-stone-700 dark:text-stone-300 whitespace-nowrap">
+                                <span class="text-rose-600">GC</span>=<span class="text-red-500">FC</span>×<span class="text-blue-500">VS</span>
+                            </div>
+                        </div>
+                        
+                        <div class="bg-blue-50/50 dark:bg-stone-800/50 p-1.5 rounded-lg border border-blue-100 dark:border-stone-700 text-center flex flex-col justify-center relative">
+                            <span class="text-[8px] text-blue-400 dark:text-stone-500 font-bold uppercase tracking-wider mb-0.5">Volumen</span>
+                            <div class="font-mono text-[9px] font-bold text-stone-600 dark:text-stone-400 leading-tight">
+                                VS∝(<span class="text-blue-500">P</span>×<span class="text-emerald-500">C</span>)-<span class="text-orange-500">R</span>
+                            </div>
+                            <div class="text-[9px] mt-0.5 font-medium">
+                                Final: <span id="calcSvDisplay" class="text-blue-600 font-bold">70</span> ml
+                            </div>
+                             <div id="svModifiers" class="absolute top-0 right-1 text-[8px] font-bold"></div>
+                        </div>
+
+                        <div class="bg-orange-50/50 dark:bg-stone-800/50 p-1.5 rounded-lg border border-orange-100 dark:border-stone-700 text-center flex flex-col justify-center">
+                            <span class="text-[8px] text-orange-400 dark:text-stone-500 font-bold uppercase tracking-wider mb-0.5">Ley Poiseuille</span>
+                            <div class="font-mono text-xs font-bold text-stone-600 dark:text-stone-400">
+                                R∝<span class="text-purple-500">η</span>/<span class="text-orange-500">r⁴</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="flex flex-row space-x-2 h-24 flex-shrink-0">
+                        <div class="w-1/3 bg-white dark:bg-stone-800 border border-rose-100 dark:border-stone-700 rounded-xl flex flex-col items-center justify-center p-1 shadow-sm relative overflow-hidden group">
+                            <div class="absolute inset-0 bg-rose-50/50 dark:bg-rose-900/10 opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                            <i id="heartIcon" class="fas fa-heart text-4xl md:text-5xl heart-icon relative z-10"></i>
+                            <span id="cycleTime" class="text-[8px] text-rose-400 dark:text-stone-400 mt-1 font-mono relative z-10">0.80s</span>
+                        </div>
+
+                        <div class="w-2/3 bg-stone-50 dark:bg-stone-800 border border-stone-100 dark:border-stone-700 rounded-xl flex flex-col justify-center px-4 relative shadow-inner">
+                            <div class="flex justify-between items-end mb-1">
+                                <span class="text-[10px] font-bold text-stone-500 dark:text-stone-400 uppercase tracking-widest">Flujo Aórtico</span>
+                                <div class="text-right">
+                                    <span id="flowLabel" class="text-[10px] font-bold text-blue-600 block">Normal</span>
+                                    <span id="resistanceLabel" class="text-[8px] text-stone-400 dark:text-stone-500 font-mono">R: 18.0</span>
+                                </div>
+                            </div>
+                            <div id="vesselContainer" class="vessel-container w-full rounded-full relative" style="height: 35px;">
+                                <div id="flowParticles" class="w-full h-full relative"></div>
+                                <div class="absolute top-0.5 left-0 w-full h-1/2 bg-gradient-to-b from-white/20 to-transparent pointer-events-none"></div>
+                            </div>
+                             <span id="resistanceCalc" class="text-[8px] text-stone-300 dark:text-stone-600 font-mono block text-right mt-0.5">(Tono × Visc)</span>
+                        </div>
+                    </div>
+
+                    <div class="flex-1 border border-stone-200 dark:border-stone-700 rounded-2xl p-3 shadow-sm bg-white dark:bg-stone-800 flex flex-col min-h-[200px] md:min-h-0">
+                        <div class="flex items-center justify-between mb-2 border-b border-stone-100 dark:border-stone-700 pb-1 flex-shrink-0">
+                            <div class="flex gap-2 text-[9px] flex-nowrap overflow-x-auto pb-1 w-full hide-scrollbar items-center">
+                                <label class="flex items-center cursor-pointer flex-shrink-0"><input type="checkbox" id="chkMAP" checked onchange="toggleDataset(1)" class="mr-1 accent-emerald-500"><span class="text-emerald-600 dark:text-emerald-400 font-bold">PAM</span></label>
+                                <label class="flex items-center cursor-pointer flex-shrink-0"><input type="checkbox" id="chkCO" checked onchange="toggleDataset(0)" class="mr-1 accent-indigo-500"><span class="text-indigo-600 dark:text-indigo-400 font-bold">GC</span></label>
+                                <label class="flex items-center cursor-pointer flex-shrink-0"><input type="checkbox" id="chkHR" onchange="toggleDataset(2)" class="mr-1 accent-red-500"><span class="text-red-500 dark:text-red-400">FC</span></label>
+                                <label class="flex items-center cursor-pointer flex-shrink-0"><input type="checkbox" id="chkSV" onchange="toggleDataset(3)" class="mr-1 accent-blue-500"><span class="text-blue-500 dark:text-blue-400">VS</span></label>
+                                <label class="flex items-center cursor-pointer flex-shrink-0"><input type="checkbox" id="chkSVR" onchange="toggleDataset(4)" class="mr-1 accent-orange-500"><span class="text-orange-500 dark:text-orange-400">Post</span></label>
+                                <label class="flex items-center cursor-pointer flex-shrink-0"><input type="checkbox" id="chkFlow" onchange="toggleDataset(5)" class="mr-1 accent-cyan-500"><span class="text-cyan-600 dark:text-cyan-400">Flujo</span></label>
+                                <label class="flex items-center cursor-pointer flex-shrink-0"><input type="checkbox" id="chkTotalR" onchange="toggleDataset(6)" class="mr-1 accent-purple-600"><span class="text-purple-600 dark:text-purple-400">R.Tot</span></label>
+                                <label class="flex items-center cursor-pointer flex-shrink-0"><input type="checkbox" id="chkVisc" onchange="toggleDataset(7)" class="mr-1 accent-pink-500"><span class="text-pink-600 dark:text-pink-400">Visc</span></label>
+                            </div>
+                            <button onclick="resetChart()" class="ml-1 text-[9px] px-1.5 py-0.5 bg-stone-100 hover:bg-stone-200 dark:bg-stone-700 text-stone-500 rounded transition-colors flex-shrink-0"><i class="fas fa-eraser"></i></button>
+                        </div>
+                        <div class="relative w-full flex-1 min-h-0">
+                            <canvas id="hemoChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- 1. DATOS DE ESPECIES ---
+        const speciesData = {
+            human: {
+                name: "Humano",
+                defaults: { hr: 75, sv: 70, svr: 18 },
+                ranges: { hr: [30, 220], sv: [20, 150], svr: [5, 40] },
+                normal: { hr: [60, 100], sv: [60, 90], svr: [15, 25], visc: [0.9, 1.1], co: [4.0, 7.0], map: [70, 105] },
+                step: { hr: 1, sv: 1, svr: 1 },
+                particleScale: 1
+            },
+            dog: {
+                name: "Perro (20kg)",
+                defaults: { hr: 100, sv: 30, svr: 33 },
+                ranges: { hr: [60, 200], sv: [10, 60], svr: [20, 80] },
+                normal: { hr: [80, 120], sv: [20, 40], svr: [25, 45], visc: [0.9, 1.1], co: [2.0, 4.0], map: [80, 120] },
+                step: { hr: 1, sv: 1, svr: 1 },
+                particleScale: 0.7
+            },
+            cat: {
+                name: "Gato (4kg)",
+                defaults: { hr: 160, sv: 3.5, svr: 200 },
+                ranges: { hr: [100, 260], sv: [2, 7], svr: [100, 400] },
+                normal: { hr: [140, 200], sv: [2.5, 5], svr: [150, 300], visc: [0.9, 1.1], co: [0.4, 0.8], map: [90, 130] },
+                step: { hr: 1, sv: 0.1, svr: 5 },
+                particleScale: 0.5
+            },
+            horse: {
+                name: "Equino (500kg)",
+                defaults: { hr: 35, sv: 1000, svr: 3.0 },
+                ranges: { hr: [20, 120], sv: [500, 1500], svr: [1, 8] },
+                normal: { hr: [28, 44], sv: [800, 1200], svr: [2.5, 4.5], visc: [0.9, 1.1], co: [25, 45], map: [90, 120] },
+                step: { hr: 1, sv: 10, svr: 0.1 },
+                particleScale: 3.0
+            },
+            elephant: {
+                name: "Elefante (4000kg)",
+                defaults: { hr: 30, sv: 5000, svr: 0.9 },
+                ranges: { hr: [20, 50], sv: [3000, 7000], svr: [0.5, 3] },
+                normal: { hr: [25, 35], sv: [4000, 6000], svr: [0.8, 1.5], visc: [0.9, 1.1], co: [120, 180], map: [110, 160] },
+                step: { hr: 1, sv: 50, svr: 0.1 },
+                particleScale: 4.0
+            },
+            cattle: {
+                name: "Bovino (600kg)",
+                defaults: { hr: 70, sv: 580, svr: 3.2 },
+                ranges: { hr: [40, 100], sv: [300, 900], svr: [1.5, 6.0] },
+                normal: { hr: [48, 84], sv: [500, 700], svr: [2.8, 4.0], visc: [0.9, 1.1], co: [35, 50], map: [110, 150] },
+                step: { hr: 1, sv: 10, svr: 0.1 },
+                particleScale: 2.5
+            },
+            rat: {
+                name: "Roedor (300g)",
+                defaults: { hr: 400, sv: 0.25, svr: 1000 },
+                ranges: { hr: [250, 550], sv: [0.1, 0.5], svr: [500, 1500] },
+                normal: { hr: [300, 450], sv: [0.2, 0.35], svr: [800, 1300], visc: [0.9, 1.1], co: [0.08, 0.15], map: [90, 120] },
+                step: { hr: 5, sv: 0.01, svr: 10 },
+                particleScale: 0.3
+            }
+        };
+
+        // --- 2. REFERENCIAS DOM ---
+        const speciesSelect = document.getElementById('speciesSelect');
+        const hrSlider = document.getElementById('hrSlider');
+        const preloadSlider = document.getElementById('preloadSlider'); 
+        const contractilitySlider = document.getElementById('contractilitySlider'); 
+        const radiusSlider = document.getElementById('radiusSlider'); 
+        const viscSlider = document.getElementById('viscSlider'); 
+        const autoRegToggle = document.getElementById('autoRegToggle');
+        
+        const hrDisplay = document.getElementById('hrDisplay');
+        const preloadDisplay = document.getElementById('preloadDisplay'); 
+        const contractilityDisplay = document.getElementById('contractilityDisplay'); 
+        const radiusDisplay = document.getElementById('radiusDisplay'); 
+        const calculatedSvrDisplay = document.getElementById('calculatedSvrDisplay'); 
+        const viscDisplay = document.getElementById('viscDisplay'); 
+        const calcSvDisplay = document.getElementById('calcSvDisplay'); 
+        
+        const svModifiers = document.getElementById('svModifiers');
+        const hrContainer = document.getElementById('hrContainer');
+        const autoBadge = document.getElementById('autoBadge');
+        const reflexMsg = document.getElementById('reflexMsg');
+        const preloadMsg = document.getElementById('preloadMsg');
+        
+        const headerCo = document.getElementById('headerCo');
+        const headerCoValue = document.getElementById('headerCoValue');
+        const coStatusText = document.getElementById('coStatusText');
+        const coStatusIcon = document.getElementById('coStatusIcon');
+        const coAlertBox = document.getElementById('coAlertBox');
+        
+        const headerMap = document.getElementById('headerMap');
+        const headerBP = document.getElementById('headerBP');
+        const bpStatusIcon = document.getElementById('bpStatusIcon');
+        const mapStatusText = document.getElementById('mapStatusText');
+        
+        const heartIcon = document.getElementById('heartIcon');
+        const cycleTime = document.getElementById('cycleTime');
+        const vesselContainer = document.getElementById('vesselContainer');
+        const flowContainer = document.getElementById('flowParticles');
+        const flowLabel = document.getElementById('flowLabel');
+        const resistanceLabel = document.getElementById('resistanceLabel'); 
+        const resistanceCalc = document.getElementById('resistanceCalc');
+        const themeIcon = document.getElementById('themeIcon');
+
+        // --- 3. ESTADO GLOBAL ---
+        let currentSpecies = 'human';
+        let hr = 75, preload = 70, contractility = 1.0, radius = 1.0, visc = 1.0;
+        let svr = 18; 
+        let particles = [];
+        let myChart;
+        let currentVals = { co: 5.2, map: 93, hr: 75, sv: 70, svr: 18, effRes: 18, visc: 1.0 };
+        let isAutoReg = false;
+        let animationFrameId;
+        let isDarkMode = false;
+
+        // --- 4. FUNCIONES DE AYUDA ---
+        const formatNum = (num) => num.toLocaleString('es-ES', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+        const formatInt = (num) => Math.round(num).toString();
+
+        function toggleDarkMode() {
+            isDarkMode = !isDarkMode;
+            document.documentElement.classList.toggle('dark');
+            themeIcon.className = isDarkMode ? "fas fa-sun" : "fas fa-moon";
+            
+            if (myChart) {
+                const gridColor = isDarkMode ? '#292524' : '#f5f5f4'; 
+                const textColor = isDarkMode ? '#a8a29e' : '#78716c';
+                myChart.options.scales.x.grid.color = gridColor;
+                myChart.options.scales.x.ticks.color = textColor;
+                myChart.options.scales.y.grid.color = gridColor;
+                myChart.options.scales.y.ticks.color = textColor;
+                myChart.options.scales.y1.grid.color = gridColor;
+                myChart.options.scales.y1.ticks.color = textColor;
+                myChart.update();
+            }
+        }
+
+        function changeSpecies() {
+            currentSpecies = speciesSelect.value;
+            const data = speciesData[currentSpecies];
+            
+            hrSlider.min = data.ranges.hr[0]; hrSlider.max = data.ranges.hr[1]; hrSlider.step = data.step.hr;
+            preloadSlider.min = data.ranges.sv[0]; preloadSlider.max = data.ranges.sv[1]; preloadSlider.step = data.step.sv;
+            
+            resetValues();
+            resetChart();
+        }
+
+        // --- 5. ANIMACIONES ---
+        function createParticle(effectiveSv, co) {
+            const particle = document.createElement('div');
+            particle.classList.add('blood-particle');
+            
+            const data = speciesData[currentSpecies];
+            let basePix = 4 * data.particleScale; 
+            const svRatio = (effectiveSv - data.ranges.sv[0]) / (data.ranges.sv[1] - data.ranges.sv[0]);
+            const finalSize = Math.max(2, basePix + (svRatio * 3));
+
+            particle.style.width = `${finalSize}px`;
+            particle.style.height = `${finalSize}px`;
+            
+            if (visc > 1.2) {
+                particle.style.background = "radial-gradient(circle at 30% 30%, #b91c1c, #450a0a)";
+                particle.style.opacity = "0.9";
+            } else if (visc < 0.8) {
+                particle.style.background = "radial-gradient(circle at 30% 30%, #fecaca, #f87171)";
+                particle.style.opacity = "0.6";
+            } else {
+                particle.style.background = "radial-gradient(circle at 30% 30%, #ef4444, #991b1b)";
+                particle.style.opacity = "0.85";
+            }
+
+            particle.style.left = `-${finalSize + 5}px`;
+            particle.style.top = Math.random() * 80 + 10 + '%'; 
+            particle.dataset.speedFactor = Math.random() * 0.5 + 0.8; 
+            
+            flowContainer.appendChild(particle);
+            particles.push({ el: particle, x: -10 });
+        }
+
+        function animateFlow() {
+            const vals = getEffectiveValues();
+            const co = vals.co;
+            const data = speciesData[currentSpecies];
+            const typicalCO = (data.defaults.hr * data.defaults.sv) / 1000;
+            const normalizedFlow = co / typicalCO;
+            
+            if (Math.random() < (normalizedFlow * 0.15 * visc)) {
+                createParticle(vals.sv, co);
+            }
+
+            for (let i = particles.length - 1; i >= 0; i--) {
+                const p = particles[i];
+                p.x += normalizedFlow * 0.8 * p.el.dataset.speedFactor;
+                p.el.style.left = p.x + '%';
+                if (p.x > 105) { p.el.remove(); particles.splice(i, 1); }
+            }
+            animationFrameId = requestAnimationFrame(animateFlow);
+        }
+
+        // --- 6. CÁLCULOS ---
+        function calculateAutoregulation(inputSv, currentSvr, inputVisc) {
+            const data = speciesData[currentSpecies];
+            const targetMap = (data.normal.map[0] + data.normal.map[1]) / 2; 
+            let targetHR = (targetMap * 1000) / (inputSv * currentSvr);
+            if (inputVisc < 0.9) {
+                const baseHr = data.defaults.hr;
+                const anemiaFactor = (0.9 - inputVisc) * (baseHr * 0.5); 
+                targetHR += anemiaFactor; 
+            }
+            return Math.round(Math.max(data.ranges.hr[0], Math.min(data.ranges.hr[1], targetHR)));
+        }
+
+        function getEffectiveValues() {
+            preload = parseFloat(preloadSlider.value);
+            contractility = parseFloat(contractilitySlider.value);
+            radius = parseFloat(radiusSlider.value); 
+            visc = parseFloat(viscSlider.value);
+            isAutoReg = autoRegToggle.checked;
+            const data = speciesData[currentSpecies];
+
+            const baseSvr = data.defaults.svr;
+            svr = (baseSvr * visc) / Math.pow(radius, 4);
+
+            let rawSv = preload;
+            
+            // Relación Calibre -> Precarga (Efecto Guyton de retorno venoso)
+            let radiusFillingFactor = 1.0;
+            let radiusMsg = "";
+
+            if (radius > 1.2) {
+                radiusFillingFactor = 1.0 - (1.2 * Math.pow(radius - 1.0, 2));
+                radiusMsg = "Estancamiento venoso";
+            } else if (radius < 0.7) {
+                radiusFillingFactor = 1.0 - (0.8 * Math.pow(1.0 - radius, 2));
+                radiusMsg = "Resistencia al Flujo Venoso";
+            }
+            radiusFillingFactor = Math.max(0.4, radiusFillingFactor);
+            
+            let effectivePreload = rawSv * radiusFillingFactor;
+            let svAfterContractility = effectivePreload * contractility;
+
+            if (isAutoReg) {
+                const reflexHR = calculateAutoregulation(svAfterContractility, svr, visc);
+                hr = reflexHR;
+                hrSlider.value = reflexHR;
+                hrSlider.disabled = true;
+                hrContainer.classList.add('opacity-70');
+                autoBadge.classList.remove('hidden');
+                
+                const baseHr = data.defaults.hr;
+                if (hr > baseHr * 1.2) reflexMsg.innerText = "Taquicardia compensatoria";
+                else if (hr < baseHr * 0.8) reflexMsg.innerText = "Bradicardia refleja";
+                else reflexMsg.innerText = "Frecuencia regulada";
+            } else {
+                hr = parseInt(hrSlider.value);
+                hrSlider.disabled = false;
+                hrContainer.classList.remove('opacity-70');
+                autoBadge.classList.add('hidden');
+                reflexMsg.innerText = "";
+            }
+
+            const effectiveResistance = svr; 
+            
+            let afterloadFactor = 1.0;
+            if (effectiveResistance > baseSvr * 1.2) afterloadFactor = 1 - ((effectiveResistance - (baseSvr * 1.2)) / baseSvr * 0.2); 
+            else if (effectiveResistance < baseSvr * 0.8) afterloadFactor = 1 + (((baseSvr * 0.8) - effectiveResistance) / baseSvr * 0.1);
+            afterloadFactor = Math.max(0.5, Math.min(1.3, afterloadFactor));
+            
+            const svAfterPoscarga = svAfterContractility * afterloadFactor;
+
+            const baseHr = data.defaults.hr;
+            const maxHr = data.ranges.hr[1];
+            let hrSvFactor = 1.0;
+            let hrMsgType = 'none';
+            const peakHr = baseHr * 1.4; 
+            
+            if (hr <= baseHr) {
+                hrSvFactor = 1.0;
+            } else if (hr <= peakHr) {
+                const slope = 0.15 / (peakHr - baseHr);
+                hrSvFactor = 1.0 + (hr - baseHr) * slope;
+                hrMsgType = 'bowditch';
+            } else {
+                const startVal = 1.15;
+                const endVal = 0.5;
+                if (hr >= maxHr) { hrSvFactor = endVal; } 
+                else {
+                    const ratio = (hr - peakHr) / (maxHr - peakHr);
+                    hrSvFactor = startVal - (ratio * (startVal - endVal));
+                }
+                hrMsgType = 'filling';
+            }
+            
+            const finalSv = svAfterPoscarga * hrSvFactor;
+            const co = (hr * finalSv) / 1000;
+            const map = co * effectiveResistance;
+            
+            return { 
+                sv: finalSv, 
+                co: co, 
+                map: map, 
+                effRes: effectiveResistance, 
+                af: afterloadFactor,
+                hrMsgType: hrMsgType,
+                radiusMsg: radiusMsg,
+                effectivePreload: effectivePreload
+            };
+        }
+
+        // --- 8. UI UPDATE ---
+        function getStatus(value, normalRange) {
+            if (!normalRange) return { color: "text-stone-400 dark:text-stone-500", icon: "" };
+            if (value < normalRange[0]) return { color: "text-orange-500 font-bold", icon: "⚠️" }; 
+            if (value > normalRange[1]) return { color: "text-red-500 font-bold", icon: "⚠️" }; 
+            return { color: "text-emerald-600 dark:text-emerald-400 font-bold", icon: "●" };
+        }
+
+        function getHeaderStatus(value, normalRange, labelLow, labelHigh) {
+            if (!normalRange) return { color: "text-white", icon: "", text: "L/min", alert: false };
+            if (value < normalRange[0]) {
+                return { color: "text-orange-300", icon: "⚠️", text: labelLow, alert: true };
+            }
+            if (value > normalRange[1]) {
+                return { color: "text-red-300", icon: "⚠️", text: labelHigh, alert: true };
+            }
+            return { color: "text-emerald-300", icon: "✔", text: "Normal", alert: false };
+        }
+
+        function updateCalculator() {
+            const vals = getEffectiveValues();
+            currentVals = { co: vals.co, map: vals.map, hr: hr, sv: vals.sv, svr: svr, effRes: vals.effRes, visc: visc };
+            const data = speciesData[currentSpecies];
+
+            if(hrDisplay) {
+                const hrStatus = getStatus(hr, data.normal.hr);
+                hrDisplay.innerHTML = `${hr} <span class="text-[10px] font-normal text-stone-400">lpm</span> <span class="text-[10px] ${hrStatus.color}">${hrStatus.icon}</span>`;
+            }
+            
+            if(preloadDisplay) {
+                const isReduced = vals.effectivePreload < preload * 0.95;
+                const displayVal = (currentSpecies === 'rat' || currentSpecies === 'cat') ? vals.effectivePreload.toFixed(2) : Math.round(vals.effectivePreload);
+                const baseVal = (currentSpecies === 'rat' || currentSpecies === 'cat') ? preload.toFixed(2) : Math.round(preload);
+                const preloadStatus = getStatus(vals.effectivePreload, data.normal.sv); 
+
+                if (isReduced) {
+                     preloadDisplay.innerHTML = `<span class="text-rose-600 dark:text-rose-400 font-bold">${displayVal}</span> <span class="text-[8px] line-through text-stone-400 ml-1">${baseVal}</span> <span class="text-[10px] font-normal text-stone-400">ml</span>`;
+                } else {
+                     preloadDisplay.innerHTML = `${baseVal} <span class="text-[10px] font-normal text-stone-400">ml</span> <span class="text-[10px] ${preloadStatus.color}">${preloadStatus.icon}</span>`;
+                }
+            }
+            
+            if(preloadMsg) {
+                if (vals.radiusMsg) {
+                    preloadMsg.innerHTML = `<span class="text-rose-500 font-bold">⚠️ ${vals.radiusMsg}</span>`;
+                } else {
+                    preloadMsg.innerHTML = "";
+                }
+            }
+            
+            if(contractilityDisplay) {
+                const contractStatus = getStatus(contractility, [0.9, 1.1]);
+                contractilityDisplay.innerHTML = `${Math.round(contractility * 100)}% <span class="text-[10px] ${contractStatus.color}">${contractStatus.icon}</span>`;
+            }
+
+            if(radiusDisplay) {
+                const rStatus = getStatus(radius, [0.95, 1.05]);
+                let rText = "Normal";
+                if(radius < 0.95) rText = "Constricción";
+                if(radius > 1.05) rText = "Dilatación";
+                radiusDisplay.innerHTML = `${radius.toFixed(2)}x <span class="text-[9px] font-normal text-stone-400">(${rText})</span>`;
+            }
+            
+            if(calculatedSvrDisplay) {
+                const svrText = (currentSpecies === 'horse' || currentSpecies === 'cattle' || currentSpecies === 'elephant') ? svr.toFixed(1) : Math.round(svr);
+                const afterloadStatus = getStatus(svr, data.normal.svr);
+                calculatedSvrDisplay.innerHTML = `${svrText} <span class="text-[10px] font-normal text-stone-400">U</span> <span class="text-[10px] ${afterloadStatus.color}">${afterloadStatus.icon}</span>`;
+            }
+            
+            if(viscDisplay) {
+                const viscStatus = getStatus(visc, [0.9, 1.1]);
+                let viscText = "Normal";
+                if (visc < 0.8) viscText = "Baja";
+                if (visc > 1.2) viscText = "Alta";
+                viscDisplay.innerHTML = `${visc.toFixed(1)}x <span class="text-[9px] font-normal text-stone-400">(${viscText})</span> <span class="text-[10px] ${viscStatus.color}">${viscStatus.icon}</span>`;
+            }
+            
+            if(calcSvDisplay) {
+                const finalSvText = (currentSpecies === 'rat' || currentSpecies === 'cat') ? vals.sv.toFixed(2) : Math.round(vals.sv);
+                calcSvDisplay.innerText = finalSvText;
+            }
+
+            if(svModifiers) {
+                let modText = "";
+                if (vals.hrMsgType === 'bowditch') modText += `<span class="mr-2 text-emerald-500 font-bold text-[8px]"><i class="fas fa-arrow-up"></i> Bowditch</span>`;
+                else if (vals.hrMsgType === 'filling') modText += `<span class="mr-2 text-rose-500 font-bold text-[8px]"><i class="fas fa-arrow-down"></i> Llenado</span>`;
+                if(vals.af < 0.95) modText += `<span class="text-orange-500 text-[8px]"><i class="fas fa-arrow-down"></i> Postcarga</span>`;
+                svModifiers.innerHTML = modText;
+            }
+
+            const coDigits = vals.co < 1 ? 3 : 1;
+            if(headerCo) headerCo.innerText = vals.co.toLocaleString('es-ES', { minimumFractionDigits: coDigits, maximumFractionDigits: coDigits });
+            if(headerMap) headerMap.innerText = formatInt(vals.map);
+            if(resistanceLabel) resistanceLabel.innerText = `R. Total: ${vals.effRes.toFixed(1)}`;
+            if(resistanceCalc) resistanceCalc.innerText = `(η · 1/r⁴)`;
+            
+            const ppSim = vals.map * 0.4; 
+            const dbp = vals.map - (ppSim / 3); 
+            const sbp = dbp + ppSim;
+            if(headerBP) headerBP.innerText = `${Math.round(sbp)}/${Math.round(dbp)}`;
+
+            if(headerCoValue && coAlertBox) {
+                const coHeaderStatus = getHeaderStatus(vals.co, data.normal.co, "BAJO GASTO", "ALTO GASTO");
+                headerCoValue.className = `text-xl font-bold leading-none ${coHeaderStatus.color}`;
+                if(coStatusIcon) {
+                    coStatusIcon.className = `text-xs ${coHeaderStatus.color}`;
+                    coStatusIcon.innerText = coHeaderStatus.icon;
+                }
+                
+                if (coHeaderStatus.alert) {
+                     coAlertBox.innerHTML = `<span class="text-[9px] font-bold block ${coHeaderStatus.color} animate-pulse px-2 py-0.5 bg-white/10 rounded">⚠️ ALERTA: ${coHeaderStatus.text}</span>`;
+                } else {
+                     coAlertBox.innerHTML = `<span class="text-[9px] font-medium text-rose-200/70 block">L/min</span>`;
+                }
+            }
+
+            if(headerBP) {
+                const mapHeaderStatus = getHeaderStatus(vals.map, data.normal.map, "HIPOTENSIÓN", "HIPERTENSIÓN");
+                headerBP.className = `text-xl font-bold leading-none ${mapHeaderStatus.color}`;
+                if(bpStatusIcon) {
+                    bpStatusIcon.className = `text-xs ${mapHeaderStatus.color}`;
+                    bpStatusIcon.innerText = mapHeaderStatus.icon;
+                }
+                if(mapStatusText) {
+                    mapStatusText.innerText = mapHeaderStatus.alert ? mapHeaderStatus.text : "";
+                    mapStatusText.className = `ml-1 font-bold ${mapHeaderStatus.color}`;
+                }
+                if(headerMap && headerMap.parentElement) {
+                    headerMap.parentElement.className = `text-[9px] font-normal mt-1 flex items-center gap-1 ${mapHeaderStatus.color}`;
+                }
+            }
+
+            const beatDuration = 60 / hr;
+            if(heartIcon) heartIcon.style.animationDuration = `${beatDuration}s`;
+            if(cycleTime) cycleTime.innerText = `${beatDuration.toFixed(2)}s / latido`;
+            
+            const svrRange = data.ranges.svr[1] - data.ranges.svr[0];
+            const svrRel = (svr - data.ranges.svr[0]) / svrRange; 
+            const vesselH = 60 - (svrRel * 45);
+            if(vesselContainer) vesselContainer.style.height = `${Math.min(60, Math.max(10, vesselH))}px`;
+            
+            const typicalCO = (data.defaults.hr * data.defaults.sv) / 1000;
+            const labelColor = vals.co < typicalCO * 0.7 ? "text-red-500" : (vals.co > typicalCO * 1.3 ? "text-orange-500" : "text-blue-500 dark:text-blue-400");
+            const flowText = vals.co < typicalCO * 0.7 ? (vals.hrMsgType === 'filling' ? "Caída por Llenado" : "Bajo Gasto") : (vals.co > typicalCO * 1.3 ? "Alto Gasto" : "Flujo Normal");
+            
+            if(flowLabel) {
+                flowLabel.innerText = flowText;
+                flowLabel.className = `text-[10px] font-bold block ${labelColor}`;
+            }
+        }
+
+        function resetValues() {
+            const data = speciesData[currentSpecies];
+            autoRegToggle.checked = false;
+            hrSlider.disabled = false;
+            hrSlider.value = data.defaults.hr;
+            preloadSlider.value = data.defaults.sv;
+            contractilitySlider.value = 1.0;
+            radiusSlider.value = 1.0;
+            viscSlider.value = 1.0;
+            updateCalculator();
+        }
+
+        // --- 9. GRÁFICO ---
+        function initChart() {
+            const ctx = document.getElementById('hemoChart').getContext('2d');
+            const initialLabels = Array.from({length: 30}, (_, i) => i);
+            const initialData = Array(30).fill(null);
+
+            myChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: initialLabels,
+                    datasets: [
+                        { label: 'Gasto (L/min)', data: [...initialData], borderColor: '#4f46e5', borderWidth: 2, yAxisID: 'y1', pointRadius: 0 },
+                        { label: 'PAM (mmHg)', data: [...initialData], borderColor: '#10b981', borderWidth: 2, yAxisID: 'y', pointRadius: 0 },
+                        { label: 'FC (lpm)', data: [...initialData], borderColor: '#ef4444', borderWidth: 1, borderDash: [5, 5], yAxisID: 'y', pointRadius: 0, hidden: true },
+                        { label: 'VS (ml)', data: [...initialData], borderColor: '#3b82f6', borderWidth: 1, borderDash: [2, 2], yAxisID: 'y', pointRadius: 0, hidden: true },
+                        { label: 'Tono (U)', data: [...initialData], borderColor: '#f97316', borderWidth: 1, yAxisID: 'y', pointRadius: 0, hidden: true },
+                        { label: 'Flujo (Q)', data: [...initialData], borderColor: '#06b6d4', borderWidth: 2, borderDash: [2, 2], yAxisID: 'y1', pointRadius: 0, hidden: true },
+                        { label: 'R. Total (U)', data: [...initialData], borderColor: '#9333ea', borderWidth: 2, borderDash: [2, 2], yAxisID: 'y', pointRadius: 0, hidden: true },
+                        { label: 'Viscosidad', data: [...initialData], borderColor: '#d946ef', borderWidth: 2, borderDash: [1, 2], yAxisID: 'y', pointRadius: 0, hidden: true }
+                    ]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false, animation: false,
+                    plugins: { legend: { display: false }, tooltip: { enabled: true } },
+                    scales: {
+                        x: { display: true, title: { display: true, text: 'Tiempo (s) →', font: {size: 10}, color: '#94a3b8' }, ticks: { display: false }, grid: { display: false } },
+                        y: { type: 'linear', display: true, position: 'left', grid: { color: '#f1f5f9' } },
+                        y1: { type: 'linear', display: true, position: 'right', grid: { drawOnChartArea: false } }
+                    }
+                }
+            });
+        }
+
+        function updateChartLoop() {
+            if (!myChart) return;
+            myChart.data.datasets.forEach(ds => ds.data.shift());
+            myChart.data.datasets[0].data.push(currentVals.co);
+            myChart.data.datasets[1].data.push(currentVals.map);
+            myChart.data.datasets[2].data.push(currentVals.hr);
+            myChart.data.datasets[3].data.push(currentVals.sv);
+            myChart.data.datasets[4].data.push(currentVals.svr);
+            myChart.data.datasets[5].data.push(currentVals.co);
+            myChart.data.datasets[6].data.push(currentVals.effRes);
+            myChart.data.datasets[7].data.push(currentVals.visc);
+            myChart.update();
+        }
+
+        function resetChart() {
+            if (!myChart) return;
+            myChart.data.datasets.forEach(ds => ds.data = Array(30).fill(null));
+            myChart.update();
+        }
+        
+        window.toggleDataset = function(index) {
+            if (!myChart) return;
+            const isVisible = myChart.isDatasetVisible(index);
+            isVisible ? myChart.hide(index) : myChart.show(index);
+        };
+
+        // Listeners
+        hrSlider.addEventListener('input', updateCalculator);
+        preloadSlider.addEventListener('input', updateCalculator);
+        contractilitySlider.addEventListener('input', updateCalculator);
+        radiusSlider.addEventListener('input', updateCalculator);
+        viscSlider.addEventListener('input', updateCalculator);
+        autoRegToggle.addEventListener('change', updateCalculator);
+
+        // Init
+        initChart();
+        changeSpecies();
+        animateFlow();
+        setInterval(updateChartLoop, 1000);
+
+    </script>
+</body>
+</html>
