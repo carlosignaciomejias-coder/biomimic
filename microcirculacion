@@ -1,0 +1,327 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { Activity, Droplets, Wind, AlertTriangle, RefreshCw, Info } from 'lucide-react';
+
+const App = () => {
+  // Estados fisiológicos
+  const [hydrostatic, setHydrostatic] = useState(35); // Presión Hidrostática Capilar (mmHg)
+  const [oncotic, setOncotic] = useState(25); // Presión Oncótica Capilar (mmHg)
+  const [histamine, setHistamine] = useState(0); // Nivel de Histamina (0-100%)
+  
+  // Estado para la UI del Edema (actualizado periódicamente desde el ref de la animación)
+  const [edemaUI, setEdemaUI] = useState(0);
+
+  // Referencias mutables para el ciclo de animación (evita re-renders en cada frame)
+  const canvasRef = useRef(null);
+  const requestRef = useRef();
+  const particlesRef = useRef([]);
+  const edemaRef = useRef(0);
+  const stateRef = useRef({ hydrostatic, oncotic, histamine });
+
+  // Sincronizar el estado de React con las referencias mutables
+  useEffect(() => {
+    stateRef.current = { hydrostatic, oncotic, histamine };
+  }, [hydrostatic, oncotic, histamine]);
+
+  // Ciclo principal de animación de Canvas
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext('2d');
+    let frameCount = 0;
+
+    const spawnParticle = () => {
+      // 80% plasma (azul), 20% glóbulos rojos (rojo)
+      const isRBC = Math.random() > 0.8;
+      particlesRef.current.push({
+        x: -10,
+        y: 160 + Math.random() * 80, // Dentro del capilar (y: 150 a 250)
+        vx: 2 + Math.random() * 1.5,
+        vy: (Math.random() - 0.5) * 0.5,
+        isRBC: isRBC,
+        leaked: false,
+        size: isRBC ? 4 : 2.5,
+        color: isRBC ? '#ef4444' : '#60a5fa',
+        id: Math.random()
+      });
+    };
+
+    const animate = () => {
+      frameCount++;
+      const { hydrostatic, oncotic, histamine } = stateRef.current;
+      
+      // Cálculos Fisiológicos
+      const NFP = hydrostatic - oncotic; // Presión Neta de Filtración
+      const permeability = 1 + (histamine / 10); // Aumenta con la histamina
+      const filtrationRate = NFP * permeability;
+
+      // Actualizar volumen de edema basado en filtración/reabsorción general
+      // Si NFP > 0 (Filtración), el edema sube. Si NFP < 0 (Reabsorción), baja.
+      if (filtrationRate > 0) {
+        edemaRef.current += filtrationRate * 0.005; // Escala visual
+      } else if (filtrationRate < 0 && edemaRef.current > 0) {
+        edemaRef.current += filtrationRate * 0.01; // Reabsorción más lenta
+      }
+      
+      // Limitar edema
+      if (edemaRef.current < 0) edemaRef.current = 0;
+      if (edemaRef.current > 300) edemaRef.current = 300; // Máximo visual
+
+      // Limpiar Canvas
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // Dibujar Fondo (Tejido Intersticial)
+      ctx.fillStyle = '#fdf4ff'; // fuchsia muy claro
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      // Dibujar Edema Acumulado (piscina de líquido abajo)
+      ctx.fillStyle = 'rgba(96, 165, 250, 0.3)'; // Azul translúcido
+      const edemaHeight = Math.min(edemaRef.current, 150); // Altura máxima 150px
+      ctx.fillRect(0, canvas.height - edemaHeight, canvas.width, edemaHeight);
+
+      // Dibujar Capilar (Fondo)
+      ctx.fillStyle = '#fff1f2'; // rose muy claro
+      ctx.fillRect(0, 150, canvas.width, 100);
+
+      // Dibujar Pared Superior del Capilar (Endotelio sólido)
+      ctx.beginPath();
+      ctx.moveTo(0, 150);
+      ctx.lineTo(canvas.width, 150);
+      ctx.strokeStyle = '#f43f5e';
+      ctx.lineWidth = 4;
+      ctx.stroke();
+
+      // Dibujar Pared Inferior del Capilar (Endotelio permeable)
+      ctx.beginPath();
+      const gapSize = 5 + (histamine / 2); // El espacio aumenta con la histamina
+      ctx.setLineDash([20, gapSize]);
+      ctx.moveTo(0, 250);
+      ctx.lineTo(canvas.width, 250);
+      ctx.strokeStyle = '#f43f5e';
+      ctx.lineWidth = 4;
+      ctx.stroke();
+      ctx.setLineDash([]); // Resetear dashes
+
+      // Generar nuevas partículas
+      if (frameCount % 3 === 0) spawnParticle();
+
+      // Actualizar y dibujar partículas
+      for (let i = particlesRef.current.length - 1; i >= 0; i--) {
+        let p = particlesRef.current[i];
+
+        // Movimiento
+        p.x += p.vx;
+        p.y += p.vy;
+
+        // Lógica de Filtración (Fuga)
+        // Solo el plasma (no RBC) puede fugar, y solo si hay presión de filtración positiva
+        if (!p.isRBC && !p.leaked && p.y > 235 && p.y < 255) {
+          // Probabilidad de fuga depende de la permeabilidad y la presión neta
+          const leakChance = Math.max(0, filtrationRate) * 0.005;
+          if (Math.random() < leakChance) {
+            p.leaked = true;
+            p.vy = Math.random() * 2 + 1; // Cae hacia el intersticio
+            p.vx = p.vx * 0.3; // Pierde velocidad horizontal
+          }
+        }
+
+        // Rebote interno suave para mantener partículas no fugadas en el capilar
+        if (!p.leaked) {
+          if (p.y < 155) p.vy = Math.abs(p.vy) + 0.1;
+          if (p.y > 245) p.vy = -Math.abs(p.vy) - 0.1;
+        }
+
+        // Dibujar partícula
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+        ctx.fillStyle = p.color;
+        ctx.fill();
+
+        // Eliminar partículas que salen de la pantalla
+        if (p.x > canvas.width + 20 || p.y > canvas.height + 20) {
+          particlesRef.current.splice(i, 1);
+        }
+      }
+
+      // Sincronizar UI a un ritmo menor para no saturar React
+      if (frameCount % 15 === 0) {
+        setEdemaUI(Math.round(edemaRef.current));
+      }
+
+      requestRef.current = requestAnimationFrame(animate);
+    };
+
+    requestRef.current = requestAnimationFrame(animate);
+
+    return () => cancelAnimationFrame(requestRef.current);
+  }, []);
+
+  // Función para reiniciar la simulación
+  const handleReset = () => {
+    setHydrostatic(35);
+    setOncotic(25);
+    setHistamine(0);
+    edemaRef.current = 0;
+    particlesRef.current = [];
+    setEdemaUI(0);
+  };
+
+  // Cálculos derivados para la UI
+  const netFiltrationPressure = hydrostatic - oncotic;
+  const currentPermeability = (1 + (histamine / 10)).toFixed(1);
+  const filtrationStatus = netFiltrationPressure > 0 ? 'Filtración (Salida)' : (netFiltrationPressure < 0 ? 'Reabsorción (Entrada)' : 'Equilibrio');
+
+  return (
+    <div className="min-h-screen bg-slate-50 p-4 md:p-8 font-sans text-slate-800">
+      <div className="max-w-6xl mx-auto space-y-6">
+        
+        {/* Header */}
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+          <div>
+            <h1 className="text-3xl font-bold text-slate-900 flex items-center gap-3">
+              <Droplets className="w-8 h-8 text-blue-500" />
+              Simulador de Microcirculación
+            </h1>
+            <p className="text-slate-500 mt-2">Modelación de Fuerzas de Starling y Shock Anafiláctico</p>
+          </div>
+          <button 
+            onClick={handleReset}
+            className="mt-4 md:mt-0 flex items-center gap-2 bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2 rounded-lg font-medium transition-colors"
+          >
+            <RefreshCw className="w-4 h-4" />
+            Reiniciar Valores
+          </button>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          
+          {/* Main Simulation View */}
+          <div className="lg:col-span-2 space-y-6">
+            <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+              <div className="relative w-full rounded-xl overflow-hidden bg-slate-900 aspect-[2/1] border border-slate-200">
+                <canvas 
+                  ref={canvasRef} 
+                  width={800} 
+                  height={400} 
+                  className="w-full h-full object-cover"
+                />
+                
+                {/* Overlay Alerts */}
+                {histamine > 50 && (
+                  <div className="absolute top-4 left-4 bg-red-500/90 text-white px-4 py-2 rounded-lg flex items-center gap-2 animate-pulse backdrop-blur-sm text-sm font-bold">
+                    <AlertTriangle className="w-5 h-5" />
+                    ALERTA: Vasodilatación y Permeabilidad Crítica
+                  </div>
+                )}
+              </div>
+              
+              <div className="mt-4 grid grid-cols-3 gap-4 text-center">
+                <div className="bg-blue-50 p-3 rounded-xl border border-blue-100">
+                  <div className="text-xs text-blue-600 font-semibold uppercase tracking-wide">Dirección de Flujo</div>
+                  <div className="text-lg font-bold text-blue-900">{filtrationStatus}</div>
+                </div>
+                <div className="bg-purple-50 p-3 rounded-xl border border-purple-100">
+                  <div className="text-xs text-purple-600 font-semibold uppercase tracking-wide">Permeabilidad (Kf)</div>
+                  <div className="text-lg font-bold text-purple-900">{currentPermeability}x</div>
+                </div>
+                <div className="bg-cyan-50 p-3 rounded-xl border border-cyan-100">
+                  <div className="text-xs text-cyan-600 font-semibold uppercase tracking-wide">Volumen de Edema</div>
+                  <div className="text-lg font-bold text-cyan-900">{edemaUI} mL</div>
+                </div>
+              </div>
+            </div>
+
+            {/* Explanation Panel */}
+            <div className="bg-blue-50/50 p-6 rounded-2xl border border-blue-100">
+              <h3 className="text-blue-900 font-bold flex items-center gap-2 mb-2">
+                <Info className="w-5 h-5" />
+                Dinámica Fisiológica
+              </h3>
+              <p className="text-sm text-slate-700 leading-relaxed mb-4">
+                La Ecuación de Starling determina el movimiento de fluidos a través del capilar. La <strong>Presión Neta de Filtración (PNF)</strong> es la diferencia entre la fuerza que empuja el líquido hacia afuera (Presión Hidrostática) y la que lo retiene (Presión Oncótica).
+              </p>
+              <div className="bg-white p-3 rounded-lg text-center font-mono text-sm border border-slate-200">
+                PNF = P. Hidrostática ({hydrostatic}) - P. Oncótica ({oncotic}) = <span className={netFiltrationPressure > 0 ? "text-red-600 font-bold" : "text-blue-600 font-bold"}>{netFiltrationPressure} mmHg</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Control Panel */}
+          <div className="space-y-6">
+            <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+              <h2 className="text-xl font-bold text-slate-900 mb-6 flex items-center gap-2">
+                <Activity className="w-5 h-5 text-slate-500" />
+                Variables Fisiológicas
+              </h2>
+
+              {/* Control P. Hidrostática */}
+              <div className="mb-8">
+                <div className="flex justify-between items-end mb-2">
+                  <label className="text-sm font-bold text-slate-700">P. Hidrostática Capilar (Pc)</label>
+                  <span className="text-lg font-bold text-red-500">{hydrostatic} <span className="text-xs text-slate-500">mmHg</span></span>
+                </div>
+                <input 
+                  type="range" 
+                  min="10" 
+                  max="60" 
+                  value={hydrostatic}
+                  onChange={(e) => setHydrostatic(Number(e.target.value))}
+                  className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-red-500"
+                />
+                <p className="text-xs text-slate-500 mt-2">Empuja el fluido hacia el espacio intersticial. Aumenta en insuficiencia cardíaca.</p>
+              </div>
+
+              {/* Control P. Oncótica */}
+              <div className="mb-8">
+                <div className="flex justify-between items-end mb-2">
+                  <label className="text-sm font-bold text-slate-700">P. Oncótica Capilar (πc)</label>
+                  <span className="text-lg font-bold text-blue-500">{oncotic} <span className="text-xs text-slate-500">mmHg</span></span>
+                </div>
+                <input 
+                  type="range" 
+                  min="10" 
+                  max="50" 
+                  value={oncotic}
+                  onChange={(e) => setOncotic(Number(e.target.value))}
+                  className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-blue-500"
+                />
+                <p className="text-xs text-slate-500 mt-2">Retiene el fluido en el capilar (generada por proteínas como la albúmina). Disminuye en desnutrición.</p>
+              </div>
+            </div>
+
+            {/* Panel de Shock Anafiláctico */}
+            <div className={`p-6 rounded-2xl shadow-sm border transition-colors ${histamine > 0 ? 'bg-red-50 border-red-200' : 'bg-white border-slate-100'}`}>
+              <h2 className="text-xl font-bold text-slate-900 mb-2 flex items-center gap-2">
+                <Wind className={`w-5 h-5 ${histamine > 0 ? 'text-red-500' : 'text-slate-500'}`} />
+                Mediadores Inflamatorios
+              </h2>
+              <p className="text-xs text-slate-600 mb-6">Simulación de respuesta alérgica sistémica (Shock Anafiláctico).</p>
+
+              {/* Control Histamina */}
+              <div className="mb-2">
+                <div className="flex justify-between items-end mb-2">
+                  <label className="text-sm font-bold text-slate-700">Nivel de Histamina</label>
+                  <span className={`text-lg font-bold ${histamine > 50 ? 'text-red-600' : 'text-slate-700'}`}>{histamine}%</span>
+                </div>
+                <input 
+                  type="range" 
+                  min="0" 
+                  max="100" 
+                  value={histamine}
+                  onChange={(e) => setHistamine(Number(e.target.value))}
+                  className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-purple-500"
+                />
+              </div>
+              
+              {/* Efecto Clínico */}
+              <div className="mt-4 p-3 bg-white/60 rounded-lg text-sm text-slate-700 border border-white/50 backdrop-blur-sm">
+                <strong>Efecto:</strong> Aumenta la permeabilidad endotelial separando las uniones celulares. Permite la fuga masiva de plasma hacia el intersticio incluso con presiones normales.
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default App;
